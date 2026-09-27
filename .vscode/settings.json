@@ -1,0 +1,6 @@
+{
+    "python.defaultInterpreterPath": "/home/codespace/.python/current/bin/python",
+    "python.linting.pylintEnabled": true,
+    "python.linting.enabled": true,
+    "python.analysis.typeCheckingMode": "basic"
+}

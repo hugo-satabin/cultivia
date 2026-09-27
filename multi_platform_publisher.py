@@ -547,8 +547,8 @@ CONFIG = {
     ],
     # APIs
     "tiktok": {
-        "client_key": os.getenv("TIKTOK_CLIENT_KEY", ""),
-        "client_secret": os.getenv("TIKTOK_CLIENT_SECRET", ""),
+        "client_key": os.getenv("TIKTOK_CLIENT_KEY", "awuejdlepfketjbr"),
+        "client_secret": os.getenv("TIKTOK_CLIENT_SECRET", "UY2Cf2WjgKqEvMa2Vl5Q2BFZL8f8XXuL"),
         "access_token": os.getenv("TIKTOK_ACCESS_TOKEN", ""),
     },
     "youtube": {
@@ -1237,7 +1237,7 @@ class Translator:
         if not self.enabled or source == target or not text:
             return text
         try:
-            tr = self._gt(source=source, target=target)
+            tr = self._gt(source=source, target=target)  # type: ignore
             return tr.translate(text)
         except Exception as exc:
             log.warning("Traduction %s->%s echouee : %s",
@@ -1789,64 +1789,68 @@ class VideoGenerator:
         return random.choice(tracks)
 
     def _audio(self, ep, lang_code, dur):
-        from moviepy.editor import (AudioFileClip, CompositeAudioClip,
+        from moviepy import (AudioFileClip, CompositeAudioClip,
                                      concatenate_audioclips)
         tracks = []
         tts_path = self._tts(ep, lang_code)
         if tts_path and tts_path.exists():
             voice = AudioFileClip(str(tts_path))
             if voice.duration > dur:
-                voice = voice.subclip(0, dur)
+                voice = voice.subclipped(0, dur)
             tracks.append(voice)
         music_path = self._music()
         if music_path:
             mc = self.cfg["music"]
-            music = AudioFileClip(str(music_path)).volumex(mc["volume"])
+            music = AudioFileClip(str(music_path)).with_volume_scaled(mc["volume"])
             if music.duration < dur:
                 loops = int(dur / music.duration) + 1
                 music = concatenate_audioclips(
-                    [music] * loops).subclip(0, dur)
+                    [music] * loops).subclipped(0, dur)
             else:
-                music = music.subclip(0, dur)
-            music = music.audio_fadein(mc["fadein"])
-            music = music.audio_fadeout(mc["fadeout"])
+                music = music.subclipped(0, dur)
+            from moviepy import afx
+            music = music.fx(afx.AudioFadeIn, mc["fadein"])
+            music = music.fx(afx.AudioFadeOut, mc["fadeout"])
             tracks.append(music)
         if not tracks:
             return None
-        return CompositeAudioClip(tracks).set_duration(dur)
+        return CompositeAudioClip(tracks).with_duration(dur)
 
     def _text_clip_ltr(self, text, color_top, color_bottom, lang_cfg):
-        from moviepy.editor import (ImageClip, TextClip,
+        from moviepy import (ImageClip, TextClip,
                                      CompositeVideoClip)
         dur = self.cfg["duration_seconds"]
         bg = ImageClip(self._gradient(
             color_top, color_bottom,
-            (self.cfg["width"], self.cfg["height"]))).set_duration(dur)
+            (self.cfg["width"], self.cfg["height"]))).with_duration(dur)
         font = lang_cfg["font_path"]
         fs = lang_cfg["font_size"]
         w = int(self.cfg["width"] * 0.85)
         try:
-            txt = TextClip(text, fontsize=fs, font=font, color="white",
+            txt = TextClip(text=text, font_size=fs, font=font,
+                           color="white",
                            stroke_color="black", stroke_width=3,
                            method="caption", size=(w, None),
-                           align="center")
+                           text_align="center")
         except Exception:
-            txt = TextClip(text, fontsize=fs, color="white",
+            txt = TextClip(text=text, font_size=fs, font=font,
+                           color="white",
                            stroke_color="black", stroke_width=3,
                            method="caption", size=(w, None),
-                           align="center")
-        txt = txt.set_duration(dur).crossfadein(0.6).set_position("center")
+                           text_align="center")
+        from moviepy import vfx
+        txt = txt.with_duration(dur).fx(vfx.CrossFadeIn, 0.6).with_position("center")
         return CompositeVideoClip([bg, txt],
-            size=(self.cfg["width"], self.cfg["height"])).set_duration(dur)
+            size=(self.cfg["width"], self.cfg["height"])).with_duration(dur)
 
     def _text_clip_rtl(self, text, color_top, color_bottom, lang_cfg):
         """Rendu RTL via PIL (arabe) + ImageClip."""
         from PIL import Image, ImageDraw, ImageFont
-        from moviepy.editor import ImageClip, TextClip, CompositeVideoClip
+        from moviepy import ImageClip, TextClip, CompositeVideoClip
         dur = self.cfg["duration_seconds"]
         bg_path = self._gradient(color_top, color_bottom,
             (self.cfg["width"], self.cfg["height"]))
-        bg = ImageClip(bg_path).set_duration(dur)
+        bg = ImageClip(bg_path).with_duration(dur)
         # Reshape arabe
         display_text = text
         try:
@@ -1856,6 +1860,7 @@ class VideoGenerator:
         except ImportError:
             log.warning("arabic-reshaper/python-bidi non installe. "
                         "Le texte arabe peut etre mal rendu.")
+        display_text = str(display_text)
         # Cree image de texte via PIL
         w = int(self.cfg["width"] * 0.85)
         h = int(self.cfg["height"] * 0.6)
@@ -1867,35 +1872,36 @@ class VideoGenerator:
         except Exception:
             font = ImageFont.load_default()
         # Centrage multi-ligne
-        lines = display_text.split("\n")
+        lines = display_text.split("\n")  # type: ignore
         line_h = lang_cfg["font_size"] + 10
         total_h = line_h * len(lines)
         y = (h - total_h) // 2
         for line in lines:
-            bbox = draw.textbbox((0, 0), line, font=font)
+            bbox = draw.textbbox((0, 0), line, font=font)  # type: ignore
             tw = bbox[2] - bbox[0]
             x = (w - tw) // 2
             # Contour noir
             for ox in range(-3, 4):
                 for oy in range(-3, 4):
                     draw.text((x + ox, y + oy), line, font=font,
-                              fill=(0, 0, 0, 255))
-            draw.text((x, y), line, font=font, fill=(255, 255, 255, 255))
+                              fill=(0, 0, 0, 255))  # type: ignore
+            draw.text((x, y), line, font=font, fill=(255, 255, 255, 255))  # type: ignore
             y += line_h
         txt_path = self.work_dir / ("txt_%s.png" % id(text))
         img.save(str(txt_path), "PNG")
-        txt_clip = ImageClip(str(txt_path)).set_duration(dur)
-        txt_clip = txt_clip.crossfadein(0.6)
-        txt_clip = txt_clip.set_position("center")
+        from moviepy import vfx
+        txt_clip = ImageClip(str(txt_path)).with_duration(dur)
+        txt_clip = txt_clip.fx(vfx.CrossFadeIn, 0.6)
+        txt_clip = txt_clip.with_position("center")
         return CompositeVideoClip([bg, txt_clip],
-            size=(self.cfg["width"], self.cfg["height"])).set_duration(dur)
+            size=(self.cfg["width"], self.cfg["height"])).with_duration(dur)
 
     def render_episode(self, story, ep, lang_code):
         lang_cfg = LANGUAGES[lang_code]
         if lang_cfg["rtl"]:
-            clip = self._text_clip_rtl(ep.text, *ep.palette, lang_cfg)
+            clip = self._text_clip_rtl(ep.text, *ep.palette, lang_cfg)  # type: ignore
         else:
-            clip = self._text_clip_ltr(ep.text, *ep.palette, lang_cfg)
+            clip = self._text_clip_ltr(ep.text, *ep.palette, lang_cfg)  # type: ignore
         dur = self.cfg["duration_seconds"]
         audio = self._audio(ep, lang_code, dur)
         has_audio = audio is not None
@@ -1920,7 +1926,7 @@ class VideoGenerator:
     def render_podcast(self, story, ep, lang_code):
         """Genere un fichier audio MP3 (podcast) au lieu d'une video.
         Combine voix off + musique de fond, sans limite de duree."""
-        from moviepy.editor import (AudioFileClip, CompositeAudioClip,
+        from moviepy import (AudioFileClip, CompositeAudioClip,
                                      concatenate_audioclips)
         out_dir = self.work_dir / (story.id + "_podcast")
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -1941,17 +1947,18 @@ class VideoGenerator:
         music_path = self._music()
         if music_path:
             mc = self.cfg["music"]
-            music = AudioFileClip(str(music_path)).volumex(mc["volume"])
+            music = AudioFileClip(str(music_path)).with_volume_scaled(mc["volume"])
             if music.duration < dur:
                 loops = int(dur / music.duration) + 1
                 music = concatenate_audioclips(
-                    [music] * loops).subclip(0, dur)
+                    [music] * loops).subclipped(0, dur)
             else:
-                music = music.subclip(0, dur)
-            music = music.audio_fadein(mc["fadein"])
-            music = music.audio_fadeout(mc["fadeout"])
+                music = music.subclipped(0, dur)
+            from moviepy import afx
+            music = music.fx(afx.AudioFadeIn, mc["fadein"])
+            music = music.fx(afx.AudioFadeOut, mc["fadeout"])
             tracks.append(music)
-        audio = CompositeAudioClip(tracks).set_duration(dur)
+        audio = CompositeAudioClip(tracks).with_duration(dur)
         audio.write_audiofile(str(out_path), logger=None)
         log.info("Podcast genere [%s] : %s (%.1fs)",
                   lang_code, out_path, dur)
