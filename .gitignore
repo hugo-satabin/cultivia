@@ -1,0 +1,18 @@
+# Bytecode Python
+__pycache__/
+*.pyc
+
+# Environnement virtuel
+.venv/
+
+# Profils navigateur : contiennent les cookies de session des
+# plateformes (TikTok, YouTube, Snapchat...), a ne JAMAIS committer
+.browser_profiles/
+
+# Musique temporaire et videos generees
+output/
+media/
+music/
+
+# Configuration locale
+.env

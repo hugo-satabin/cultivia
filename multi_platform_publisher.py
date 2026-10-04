@@ -27,7 +27,7 @@ Fonctionnalités :
 Dépendances :
     pip install moviepy pillow gTTS requests google-auth google-auth-oauthlib
                 google-api-python-client deep-translator feedparser
-                arabic-reshaper python-bidi requests-oauthlib
+                arabic-reshaper python-bidi requests-oauthlib playwright
 
 Usage :
     python multi_platform_publisher.py             # tout générer + publier
@@ -53,6 +53,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
+
+import browser_uploaders
 
 # ---------------------------------------------------------------------------
 # Langues
@@ -584,6 +586,10 @@ CONFIG = {
         "client_id": os.getenv("SNAPCHAT_CLIENT_ID", ""),
         "client_secret": os.getenv("SNAPCHAT_CLIENT_SECRET", ""),
         "refresh_token": os.getenv("SNAPCHAT_REFRESH_TOKEN", ""),
+        # Connexion navigateur (web.snapchat.com) :
+        "email": os.getenv("SNAPCHAT_EMAIL", ""),
+        "password": os.getenv("SNAPCHAT_PASSWORD", ""),
+
     },
     "pinterest": {
         "access_token": os.getenv("PINTEREST_ACCESS_TOKEN", ""),
@@ -691,6 +697,36 @@ CONFIG = {
         "from_addr": os.getenv("SMTP_FROM", "hugo.satabin.01@gmail.com"),
         "to_addr": os.getenv("EMAIL_TO", "hugo.satabin.01@gmail.com"),
         "use_tls": True,
+    },
+    # Upload via navigateur (clics dans les interfaces web)
+    # au lieu des API, avec un rythme lent "humain" pour
+    # limiter les captchas. Telegram reste en API bot, les
+    # podcasts passent par le flux RSS (aucun navigateur).
+    "browser": {
+        "enabled": bool(os.getenv("BROWSER_UPLOAD", "1")
+                          not in ("0", "false", "no")),
+        "headless": False,
+        # Repertoire "User Data" d'un Edge existant pour
+        # reutiliser sa session (SSO). Ferme Edge avant de
+        # lancer, sinon le profil est verrouille. Vide =
+        # profil dedie dans profile_dir.
+        "edge_user_data_dir": os.getenv("EDGE_USER_DATA_DIR",
+                                         ""),
+
+        "profile_dir": os.getenv("BROWSER_PROFILE_DIR",
+                                   ".browser_profiles"),
+        "platforms": ["tiktok", "youtube", "dailymotion",
+                      "facebook", "instagram", "x",
+                      "pinterest", "snapchat"],
+        # Pauses entre chaque action (secondes)
+        "min_delay": 3.0,
+        "max_delay": 9.0,
+        # Vitesse de frappe par caractere (secondes)
+        "typing_min": 0.08,
+        "typing_max": 0.35,
+        # Pause entre deux plateformes (secondes)
+        "gap_min": 30.0,
+        "gap_max": 90.0,
     },
 }
 
@@ -3206,6 +3242,13 @@ class Publisher:
             SpotifyUploader(config),
             ApplePodcastsUploader(config),
         ]
+        # Sauf Telegram (API bot), remplacer les uploaders API par des
+        # des uploaders navigateur pour les plateformes configurees :
+        # uploaders navigateur : upload du fichier + remplissage
+        # des formulaires par clics, a rythme lent (anti-captcha).
+        if self.cfg.get("browser", {}).get("enabled", True):
+            self.uploaders = browser_uploaders.apply(
+                self.uploaders, config)
 
     def run(self, stories, dry_run=False, platforms=None,
             languages=None):
@@ -3346,6 +3389,20 @@ class Publisher:
                 else:
                     pid = uploader.upload(video_path, title, desc, tags)
                 results[uploader.name] = pid
+                # En mode navigateur, marquer une pause lente
+                # aleatoire avant la plateforme suivante :
+                # les enchainements d'actions trop rapides
+                # declenchent les captchas.
+                if getattr(uploader, "name", "") in (
+                        self.cfg.get("browser", {}).get(
+                            "platforms", [])):
+                    bc = self.cfg.get("browser", {})
+                    gap = random.uniform(
+                        bc.get("gap_min", 30.0),
+                        bc.get("gap_max", 90.0))
+                    log.info("Pause anti-captcha: %.0fs avant"
+                              " la plateforme suivante.", gap)
+                    time.sleep(gap)
             except Exception as exc:
                 log.error("Echec %s pour %s ep%d [%s] : %s",
                            uploader.name, story.id, ep.index,
@@ -3384,11 +3441,23 @@ def parse_args(argv):
                             "snapchat", "pinterest", "telegram",
                             "spotify", "apple_podcasts"],
                    help="Restreindre les plateformes.")
+    p.add_argument("--login", nargs="*", default=None,
+                   choices=list(browser_uploaders.BROWSER_PLATFORMS),
+                   help="Ouvrir les navigateurs pour une connexion"
+                        " manuelle (premiere utilisation), puis quitter.")
+    p.add_argument("--api", action="store_true",
+                   help="Utiliser les API officielles au lieu du"
+                        " navigateur (mode clics lents).")
     return p.parse_args(argv)
 
 
 def main(argv=None):
     args = parse_args(argv if argv is not None else sys.argv[1:])
+    if args.login is not None:
+        browser_uploaders.open_login(CONFIG, args.login)
+        return
+    if args.api:
+        CONFIG.setdefault("browser", {})["enabled"] = False
     publisher = Publisher(CONFIG)
 
     if args.schedule:

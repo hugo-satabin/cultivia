@@ -12,3 +12,4 @@ arabic-reshaper
 python-bidi
 requests-oauthlib
 ngrok
+playwright
