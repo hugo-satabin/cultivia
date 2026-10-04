@@ -1741,7 +1741,11 @@ class DailyScheduler:
             log.info("Prochaine publication a %s (dans %.0f s)",
                       target.strftime("%Y-%m-%d %H:%M"), wait)
             time.sleep(max(wait, 0))
-            self._publish_one(use_wiki, use_news)
+            try:
+                self._publish_one(use_wiki, use_news)
+            except Exception as exc:
+                log.error("Publication planifiee echouee : %s — "
+                           "planificateur continue.", exc)
 
     def _publish_one(self, use_wiki, use_news):
         from datetime import datetime
@@ -3277,8 +3281,14 @@ class Publisher:
                     lang_story = story
                 elif self.translator.enabled:
                     log.info("Traduction vers %s...", lang_code)
-                    lang_story = self.translator.translate_story(
-                        story, lang_code)
+                    try:
+                        lang_story = self.translator.translate_story(
+                            story, lang_code)
+                    except Exception as exc:
+                        log.error("Traduction %s [%s] echouee, "
+                                   "skip langue : %s", story.id,
+                                   lang_code, exc)
+                        continue
                 else:
                     log.warning("Traducteur desactive, skip %s",
                                 lang_code)
@@ -3288,7 +3298,14 @@ class Publisher:
                           lang_story.title, lang_code,
                           lang_story.theme, lang_story.episode_count)
                 # Verifications ethiques pre-publication
-                ok, per_ep = self.ethics.check_story(lang_story, lang_code)
+                try:
+                    ok, per_ep = self.ethics.check_story(
+                        lang_story, lang_code)
+                except Exception as exc:
+                    log.error("Verif ethique %s [%s] echouee, "
+                               "skip langue : %s", story.id,
+                               lang_code, exc)
+                    continue
                 if not ok:
                     for ep_idx, issues in per_ep.items():
                         for iss in issues:
@@ -3325,11 +3342,26 @@ class Publisher:
                         log.info("[DRY-RUN] %s [%s] : %s",
                                   story.id, lang_code, video_path)
                         continue
-                    results = self._publish_all(
-                        chosen, lang_story, ep, video_path, lang_code,
-                        podcast_path)
-                    self.notifier.notify(
-                        lang_story, ep, results, lang_code)
+                    # Chaque plateforme est deja isolee dans
+                    # _publish_all ; ces garde-fous empechent un
+                    # probleme global (reseau, SMTP...) d arreter
+                    # les episodes et plateformes suivants.
+                    try:
+                        results = self._publish_all(
+                            chosen, lang_story, ep, video_path,
+                            lang_code, podcast_path)
+                    except Exception as exc:
+                        log.error("Publication %s ep%d [%s] "
+                                   "interrompue, on continue : %s",
+                                   story.id, ep.index, lang_code, exc)
+                        results = {}
+                    try:
+                        self.notifier.notify(
+                            lang_story, ep, results, lang_code)
+                    except Exception as exc:
+                        log.warning("Notification %s ep%d [%s] "
+                                     "echouee : %s", story.id,
+                                    ep.index, lang_code, exc)
                     time.sleep(5)
 
     def _publish_all(self, uploaders, story, ep, video_path, lang_code,
