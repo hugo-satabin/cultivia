@@ -1286,7 +1286,12 @@ class Translator:
             return story
 
         tr_episodes = []
-        for ep in story.episodes:
+        nb = len(story.episodes)
+        log.info("Traduction %s : %d episode(s) vers '%s'...",
+                  story.id, nb, target_lang)
+        for i, ep in enumerate(story.episodes, 1):
+            log.info("  Traduction episode %d/%d...", i, nb)
+
             raw = self.translate(ep.narration, "fr", target_lang)
             width = LANGUAGES[target_lang]["text_width"]
             tr_episodes.append(Episode(
@@ -1808,6 +1813,8 @@ class VideoGenerator:
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / ("%s_%s.mp3" % (lang_code, id(ep)))
         try:
+            log.info("Voix off [%s] : synthese gTTS (%d car.)...",
+                      lang_code, len(ep.narration))
             tts = gTTS(text=ep.narration, lang=lang_cfg["tts_lang"],
                        slow=cfg["slow"], tld=lang_cfg["tts_tld"])
             tts.save(str(out_path))
@@ -1835,11 +1842,15 @@ class VideoGenerator:
         tts_path = self._tts(ep, lang_code)
         if tts_path and tts_path.exists():
             voice = AudioFileClip(str(tts_path))
+            log.info("Audio : voix off chargee (%.1fs)",
+                     voice.duration)
             if voice.duration > dur:
                 voice = voice.subclipped(0, dur)
             tracks.append(voice)
         music_path = self._music()
         if music_path:
+            log.info("Audio : musique de fond : %s",
+                     music_path.name)
             mc = self.cfg["music"]
             music = AudioFileClip(str(music_path)).with_volume_scaled(mc["volume"])
             if music.duration < dur:
@@ -1854,7 +1865,9 @@ class VideoGenerator:
                 afx.AudioFadeOut(mc["fadeout"])])
             tracks.append(music)
         if not tracks:
+            log.info("Audio : aucune piste, video muette.")
             return None
+        log.info("Audio : %d piste(s) mixee(s)", len(tracks))
         return CompositeAudioClip(tracks).with_duration(dur)
 
     def _text_clip_ltr(self, text, color_top, color_bottom, lang_cfg):
@@ -1940,6 +1953,7 @@ class VideoGenerator:
             size=(self.cfg["width"], self.cfg["height"])).with_duration(dur)
 
     def render_episode(self, story, ep, lang_code):
+        t0 = time.time()
         lang_cfg = LANGUAGES[lang_code]
         if lang_cfg["rtl"]:
             clip = self._text_clip_rtl(ep.text, *ep.palette, lang_cfg)  # type: ignore
@@ -1953,6 +1967,9 @@ class VideoGenerator:
         out_dir = self.work_dir / story.id
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / ("ep%02d_%s.mp4" % (ep.index, lang_code))
+        log.info("Encodage ep%d [%s] : %ds, %dfps -> %s",
+                 ep.index, lang_code, dur, self.cfg["fps"],
+                 out_path.name)
         clip.write_videofile(
             str(out_path),
             fps=self.cfg["fps"],
@@ -1963,7 +1980,8 @@ class VideoGenerator:
             threads=4,
             logger=None,
         )
-        log.info("Video generee [%s] : %s", lang_code, out_path)
+        log.info("Video generee [%s] : %s (%.1fs)",
+                 lang_code, out_path, time.time() - t0)
         return out_path
 
     def render_podcast(self, story, ep, lang_code):
@@ -3273,6 +3291,11 @@ class Publisher:
         if platforms:
             chosen = [u for u in self.uploaders if u.name in platforms]
         langs = languages or self.cfg["languages"]
+        t_run = time.time()
+        log.info("DEBUT : %d story(ies), %d langue(s), %d plateforme(s)",
+                 len(stories), len(langs), len(chosen))
+        log.info("Plateformes : %s",
+                 ", ".join(u.name for u in chosen))
 
         for story in stories:
             for lang_code in langs:
@@ -3318,6 +3341,10 @@ class Publisher:
                                    lang_story.id, lang_code)
                         continue
                 for ep in lang_story.episodes:
+                    log.info("== Episode %d/%d [%s] : generation..."
+                             " (texte %d car.)", ep.index,
+                             lang_story.episode_count, lang_code,
+                             len(ep.text))
                     try:
                         video_path = self.generator.render_episode(
                             lang_story, ep, lang_code)
@@ -3363,6 +3390,8 @@ class Publisher:
                                      "echouee : %s", story.id,
                                     ep.index, lang_code, exc)
                     time.sleep(5)
+        log.info("RUN TERMINE : %d story(ies) traitees en %.0fs",
+                 len(stories), time.time() - t_run)
 
     def _publish_all(self, uploaders, story, ep, video_path, lang_code,
                       podcast_path=None):
@@ -3413,6 +3442,8 @@ class Publisher:
                                    uploader.name)
                         results[uploader.name] = ""
                         continue
+                log.info("-> %s : envoi en cours...", uploader.name)
+                t0 = time.time()
                 if uploader.name == "telegram":
                     pid = uploader.send(video_path, desc, lang_code)
                 elif uploader.name == "spotify":
@@ -3433,6 +3464,12 @@ class Publisher:
                         pid = ""
                 else:
                     pid = uploader.upload(video_path, title, desc, tags)
+                if pid:
+                    log.info("OK %s : publie (id=%s) en %.1fs",
+                             uploader.name, pid, time.time() - t0)
+                else:
+                    log.warning("ECHEC %s : aucun post cree en %.1fs",
+                                 uploader.name, time.time() - t0)
                 results[uploader.name] = pid
                 # En mode navigateur, marquer une pause lente
                 # aleatoire avant la plateforme suivante :
@@ -3490,6 +3527,9 @@ def parse_args(argv):
                    choices=list(browser_uploaders.BROWSER_PLATFORMS),
                    help="Ouvrir les navigateurs pour une connexion"
                         " manuelle (premiere utilisation), puis quitter.")
+    p.add_argument("-v", "--verbose", action="store_true",
+                   help="Logs detailles (DEBUG), notamment les actions "
+                        "du navigateur.")
     p.add_argument("--api", action="store_true",
                    help="Utiliser les API officielles au lieu du"
                         " navigateur (mode clics lents).")
@@ -3498,6 +3538,10 @@ def parse_args(argv):
 
 def main(argv=None):
     args = parse_args(argv if argv is not None else sys.argv[1:])
+    if getattr(args, "verbose", False):
+        logging.getLogger().setLevel(logging.DEBUG)
+        logging.getLogger("publisher").setLevel(logging.DEBUG)
+        log.info("Mode verbose : logs DEBUG actives.")
     if args.login is not None:
         browser_uploaders.open_login(CONFIG, args.login)
         return

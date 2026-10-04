@@ -71,11 +71,14 @@ class HumanPace:
         """Pause aleatoire, appelee entre chaque action du flow."""
         lo = self.min_delay if min_s is None else min_s
         hi = self.max_delay if max_s is None else max_s
-        time.sleep(random.uniform(lo, hi))
+        d = random.uniform(lo, hi)
+        log.debug("pause %.1fs", d)
+        time.sleep(d)
 
     def slow_type(self, page, locator, text, clear=False):
         """Saisit `text` caractere par caractere, avec des micro-pauses
         et parfois un petit 'temps de reflexion' au milieu."""
+        log.debug("frappe de %d caracteres", len(text))
         locator.focus()
         if clear:
             try:
@@ -96,6 +99,7 @@ class HumanPace:
         """Clique doucement : petit decale aleatoire dans l'element,
         appui maintenu un court instant, puis pause."""
         delay_ms = random.randint(60, 180)
+        log.debug("clic (appui %dms)", delay_ms)
         try:
             box = locator.bounding_box()
             if box:
@@ -230,6 +234,7 @@ class BrowserUploaderBase:
                 loc = page.locator(sel).first
                 try:
                     loc.wait_for(state="visible", timeout=2000)
+                    log.debug("element trouve : %s", sel)
                     return loc
                 except Exception:
                     continue
@@ -301,6 +306,8 @@ class BrowserUploaderBase:
     # -- API commune ---------------------------------------------------------
 
     def upload(self, video_path, title, description, tags):
+        log.info("%s : upload navigateur de %s", self.name,
+                 os.path.basename(video_path))
         try:
             page = self._start()
         except ImportError as exc:
@@ -320,6 +327,7 @@ class BrowserUploaderBase:
         finally:
             self.pace.pause(2.0, 5.0)
             self._close()
+            log.info("%s : navigateur ferme", self.name)
 
     def _do_upload(self, page, video_path, title, description, tags):
         raise NotImplementedError
