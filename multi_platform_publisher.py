@@ -599,14 +599,14 @@ CONFIG = {
         "bot_token": os.getenv("TELEGRAM_BOT_TOKEN", ""),
         "channels": {
             "fr": os.getenv("TELEGRAM_CHANNEL_FR", "t.me/+5ofC9VKcstBjMDc0"),
-            "en": os.getenv("TELEGRAM_CHANNEL_EN", "t.me/+5ofC9VKcstBjMDc0"),
-            "es": os.getenv("TELEGRAM_CHANNEL_ES", "t.me/+5ofC9VKcstBjMDc0"),
-            "pt": os.getenv("TELEGRAM_CHANNEL_PT", "t.me/+5ofC9VKcstBjMDc0"),
-            "de": os.getenv("TELEGRAM_CHANNEL_DE", "t.me/+5ofC9VKcstBjMDc0"),
+            "en": os.getenv("TELEGRAM_CHANNEL_EN", "https://t.me/CULTIVIA_CHANNEL_EN"),
+            "es": os.getenv("TELEGRAM_CHANNEL_ES", "https://t.me/CULTIVIA_CHANNEL_ES"),
+            "pt": os.getenv("TELEGRAM_CHANNEL_PT", "https://t.me/CULTIVIA_CHANNEL_PT"),
+            "de": os.getenv("TELEGRAM_CHANNEL_DE", "https://t.me/CULTIVIA_CHANNEL_DE"),
             "ar": os.getenv("TELEGRAM_CHANNEL_AR", "t.me/+5ofC9VKcstBjMDc0"),
-            "en-gb": os.getenv("TELEGRAM_CHANNEL_EN_GB", os.getenv("TELEGRAM_CHANNEL_EN", "t.me/+5ofC9VKcstBjMDc0")),
-            "en-au": os.getenv("TELEGRAM_CHANNEL_EN_AU", os.getenv("TELEGRAM_CHANNEL_EN", "t.me/+5ofC9VKcstBjMDc0")),
-            "en-in": os.getenv("TELEGRAM_CHANNEL_EN_IN", os.getenv("TELEGRAM_CHANNEL_EN", "t.me/+5ofC9VKcstBjMDc0")),
+            "en-gb": os.getenv("TELEGRAM_CHANNEL_EN_GB", os.getenv("TELEGRAM_CHANNEL_EN", "https://t.me/CULTIVIA_CHANNEL_EN")),
+            "en-au": os.getenv("TELEGRAM_CHANNEL_EN_AU", os.getenv("TELEGRAM_CHANNEL_EN", "https://t.me/CULTIVIA_CHANNEL_EN")),
+            "en-in": os.getenv("TELEGRAM_CHANNEL_EN_IN", os.getenv("TELEGRAM_CHANNEL_EN", "https://t.me/CULTIVIA_CHANNEL_EN")),
             "zh": os.getenv("TELEGRAM_CHANNEL_ZH", "t.me/+5ofC9VKcstBjMDc0"),
             "ja": os.getenv("TELEGRAM_CHANNEL_JA", "t.me/+5ofC9VKcstBjMDc0"),
             "ko": os.getenv("TELEGRAM_CHANNEL_KO", "t.me/+5ofC9VKcstBjMDc0"),
@@ -2894,6 +2894,15 @@ class TelegramUploader(BaseUploader):
             log.warning("Telegram: aucun canal pour la langue '%s', "
                         "ignore.", lang_code)
             return ""
+        # Une URL "https://t.me/xxx" n'est pas un chat_id
+        # valide pour l'API bot : convertir en "@xxx".
+        # (Les liens prives "t.me/+hash" ne sont de toute
+        # facon utilisables que pour rejoindre un canal,
+        # pas comme destination d'un bot.)
+        m = re.match(r"(?:https?://)?t\.me/([^/\s]+)",
+                    channel)
+        if m and not m.group(1).startswith("+"):
+            channel = "@" + m.group(1)
         url = "https://api.telegram.org/bot%s/sendVideo" % bot_token
         with open(video_path, "rb") as fh:
             resp = self.requests.post(url, data={
