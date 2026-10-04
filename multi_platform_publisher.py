@@ -1845,8 +1845,9 @@ class VideoGenerator:
             else:
                 music = music.subclipped(0, dur)
             from moviepy import afx
-            music = music.fx(afx.AudioFadeIn, mc["fadein"])
-            music = music.fx(afx.AudioFadeOut, mc["fadeout"])
+            music = music.with_effects([
+                afx.AudioFadeIn(mc["fadein"]),
+                afx.AudioFadeOut(mc["fadeout"])])
             tracks.append(music)
         if not tracks:
             return None
@@ -1875,7 +1876,9 @@ class VideoGenerator:
                            method="caption", size=(w, None),
                            text_align="center")
         from moviepy import vfx
-        txt = txt.with_duration(dur).fx(vfx.CrossFadeIn, 0.6).with_position("center")
+        txt = (txt.with_duration(dur)
+               .with_effects([vfx.CrossFadeIn(0.6)])
+               .with_position("center"))
         return CompositeVideoClip([bg, txt],
             size=(self.cfg["width"], self.cfg["height"])).with_duration(dur)
 
@@ -1927,7 +1930,7 @@ class VideoGenerator:
         img.save(str(txt_path), "PNG")
         from moviepy import vfx
         txt_clip = ImageClip(str(txt_path)).with_duration(dur)
-        txt_clip = txt_clip.fx(vfx.CrossFadeIn, 0.6)
+        txt_clip = txt_clip.with_effects([vfx.CrossFadeIn(0.6)])
         txt_clip = txt_clip.with_position("center")
         return CompositeVideoClip([bg, txt_clip],
             size=(self.cfg["width"], self.cfg["height"])).with_duration(dur)
@@ -1942,7 +1945,7 @@ class VideoGenerator:
         audio = self._audio(ep, lang_code, dur)
         has_audio = audio is not None
         if has_audio:
-            clip = clip.set_audio(audio)
+            clip = clip.with_audio(audio)
         out_dir = self.work_dir / story.id
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / ("ep%02d_%s.mp4" % (ep.index, lang_code))
@@ -1991,8 +1994,9 @@ class VideoGenerator:
             else:
                 music = music.subclipped(0, dur)
             from moviepy import afx
-            music = music.fx(afx.AudioFadeIn, mc["fadein"])
-            music = music.fx(afx.AudioFadeOut, mc["fadeout"])
+            music = music.with_effects([
+                afx.AudioFadeIn(mc["fadein"]),
+                afx.AudioFadeOut(mc["fadeout"])])
             tracks.append(music)
         audio = CompositeAudioClip(tracks).with_duration(dur)
         audio.write_audiofile(str(out_path), logger=None)
